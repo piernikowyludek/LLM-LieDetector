@@ -43,7 +43,8 @@ def create_datasets(transcripts_true, transcripts_lie, train_ratio=0.7, rng=None
 
 
 def create_datasets_paired_questions(dataset, dataset2=None, train_ratio=0.7, rng=None):
-    """`dataset` and `dataset2` are here dataframew where each row corresponds to a question, the first column to the truthful case and the second one to the lying case. """
+    """`dataset` and `dataset2` are here dataframew where each row corresponds to a question, 
+    the first column to the truthful case and the second one to the lying case. """
     assert len(dataset.shape) == 2
     assert "truth" in dataset.columns[0]
     assert "lie" in dataset.columns[1]

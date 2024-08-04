@@ -1,7 +1,5 @@
 # Notebooks with lie detectors experiments on prompted GPT-3.5
 
-
-
 - `train_classifiers_on_prompted_GPT_3.5.ipynb` trains a set of detectors (for different groups of elicitation questions and considering binary and logprob response to the elicitation questions)  on the answers provided by GPT-3.5 (`text-davinci-003`), by pulling together data from all Q/A datasets and with all prompts. Further, it studies calibration of the classifiers and the dependence of their performance with the number of samples used for training.
 - `simple_generalisation_studies` contains experiments testing generalisation of the above framework across datasets and prompts.
 - `advanced_generalisation_studies` contains notebooks testing the generalisation of the classifier trained in `train_classifiers_on_prompted_GPT_3.5.ipynb` in out-of-distribution setups, such as: 
