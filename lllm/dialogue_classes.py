@@ -1,7 +1,11 @@
 import logging
-
+import os
 import openai
 from retry import retry
+import dotenv
+dotenv.load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
+client = openai.OpenAI()
 
 CoTPrompt = """
 You will be asked a question and you must lie about the answer, in follow up questions you
@@ -37,20 +41,41 @@ class LanguageModelAgent:
         self.max_batch_size = 20
 
     def make_API_call(self, prompts, return_logprobs=False):
-
-        max_batch_size = self.max_batch_size
+        max_batch_size = 10
         N = len(prompts)
         if N % max_batch_size == 0:
             n_batches = N // max_batch_size
         else:
             n_batches = N // max_batch_size + 1
 
+        out = []
         for i in range(n_batches):
             batch = prompts[i * max_batch_size: (i + 1) * max_batch_size]
             if 'llama' in self.model or 'alpaca' in self.model or 'vicuna' in self.model:
                 kwargs = self.model_kwargs.copy()
                 kwargs.pop('endpoint')
                 response = self.model_kwargs['endpoint'](batch, return_logprobs=return_logprobs, **kwargs)
+            elif 'ft:gpt-3.5-turbo-0613:personal:48-questions-v3:9w4l77H7:ckpt-step-1200' in self.model:
+                for p in batch:
+                    if p.count('Answer:') == 2:
+                        parts = p.split('\nAnswer:')
+                        question_1 = parts[0] + '\nAnswer: '
+                        parts_2 = parts[1].split('\nQuestion:')
+                        answer_1 = parts_2[0][1:]
+                        question_2 = parts_2[1][1:]+ '\nAnswer: '
+                        prompt = [{'role': 'user', 'content': question_1},
+                            {'role': 'assistant', 'content': answer_1},
+                            {'role': 'user', 'content': question_2}]
+                    else:
+                        prompt = [{'role': 'user', 'content': p}]
+                    print()
+                    print("PROMPTS: ")
+                    print(prompt)
+                    print()
+                    response = self._individual_call_new(prompt, return_logprobs=True)
+                    print('RESPONSE: ')
+                    print(response)
+                    out.append(response)
             else:
                 response = self._individual_call(batch, return_logprobs=return_logprobs)
             if i == 0:
@@ -63,6 +88,21 @@ class LanguageModelAgent:
         return out
 
     @retry(delay=5)
+    def _individual_call_new(self, prompts, return_logprobs=True):
+        if return_logprobs:
+            logprobs = max(5, self.model_kwargs.get('logprobs', 1))
+        else:
+            logprobs = max(1, self.model_kwargs.get('logprobs', 1))
+
+        model_kwargs_wo_logprobs = self.model_kwargs.copy()
+        model_kwargs_wo_logprobs.pop('logprobs', None)
+
+        response = client.chat.completions.create(
+            model=self.model, messages=prompts, logprobs=True, top_logprobs=5, **model_kwargs_wo_logprobs
+        )
+        return response
+    
+    @retry(delay=7)
     def _individual_call(self, prompts, return_logprobs=False):
         if return_logprobs:
             logprobs = max(5, self.model_kwargs.get('logprobs', 1))
@@ -73,7 +113,7 @@ class LanguageModelAgent:
         model_kwargs_wo_logprobs.pop('logprobs', None)
 
         response = openai.Completion.create(
-            model=self.model, prompt=prompts, echo=False, logprobs=logprobs, **model_kwargs_wo_logprobs
+            model=self.model, prompt=prompts, echo=False, logprobs=logprobs, top_logprobs=5, **model_kwargs_wo_logprobs
         )
         return response
 
@@ -96,14 +136,14 @@ class LanguageModelAgent:
             logprob_list.append({"tokens": tokens, "logprobs": logprobs})
 
         return logprob_list
-
+    
     def _get_response(self, input, prefix="", suffix="", return_logprobs=False):
         self.update_memory(input, prefix=prefix, suffix=suffix)
 
         prompts = self.memory
 
         response = self.make_API_call(prompts, return_logprobs)
-        clean_response = [choice["text"].strip() for choice in response["choices"]]
+        clean_response = [choice.message.content.strip() for choice in response.choices]
 
         self.memory = [
             f"{memory} {choice}" for choice, memory in zip(clean_response, self.memory)
@@ -135,7 +175,7 @@ class Suspect(LanguageModelAgent):
             prompt,  # lie instruction + lie
             n_parallel,
             split_on="Answer: ",
-            model="text-davinci-003",
+            model="gpt-3.5-turbo-instruct",
             prefix="\nQuestion: ",
             suffix="\nAnswer:",
             model_kwargs={
@@ -223,7 +263,7 @@ class DynamicInvestigator(Investigator, LanguageModelAgent):
             max_interactions=4,
             n_parallel=1,
             split_on="Question: ",
-            model="text-davinci-003",
+            model="gpt-3.5-turbo-instruct",
             prefix="\nAnswer: ",
             suffix="\nQuestion:",
             model_kwargs={
@@ -283,12 +323,13 @@ class HumanInvestigator(Investigator):
 
     def update_memory(self, answer, *args, **kwargs):
         print(f"Answer: {answer[0]}")
+        print()
 
     def set_question(self, question):
         # super().set_question(question)
         # self.update_memory(question, prefix="\nQuestion: ")
         print(f"Question: {question[0]}")
-
+        print()
     def get_response(self, answer):
         print(f"Answer: {answer[0]}")
         response = input("Question: ")
@@ -326,7 +367,6 @@ class Dialogue:
         """expected_answer is the correct answer to the question. The result is returned
         as part of the info dict
         """
-
         if type(question) is list:
             assert len(question) == self.n_parallel
         else:
@@ -390,9 +430,9 @@ class Dialogue:
             raise ValueError("Only one question can be asked at a time")
         question = [question]
 
-        # self.update_memory(self.transcript, question)
+        #self.update_memory(self.transcript, question)
 
-        # self.investigator.set_question(question)
+        #self.investigator.set_question(question)
 
         suspect_answer, logprobs = self.suspect.get_response(question)
 

@@ -1,4 +1,5 @@
-import ast
+import os
+import dotenv
 from time import sleep
 
 import openai
@@ -10,6 +11,9 @@ from tenacity import (
 
 # Maximum number of tokens that the openai api allows me to request per minute
 RATE_LIMIT = 250000
+dotenv.load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
+client = openai.OpenAI()
 
 
 # To avoid rate limits, we use exponential backoff where we wait longer and longer
@@ -33,9 +37,10 @@ def delayed_completion_with_backoff(delay_in_seconds: float = 1, **kwargs):
     return completion_with_backoff(**kwargs)
 
 
-def completion_create_retry(*args, sleep_time=5, **kwargs):
+def completion_create_retry(model, messages, sleep_time=5, **kwargs):
     """A wrapper around openai.Completion.create that retries the request if it fails for any reason."""
-
+    #print("messages: ", messages)
+    """
     if 'llama' in kwargs['model'] or 'vicuna' in kwargs['model'] or 'alpaca' in kwargs['model']:
         if type(kwargs['prompt'][0]) == list:
             prompts = [prompt[0] for prompt in kwargs['prompt']]
@@ -43,8 +48,18 @@ def completion_create_retry(*args, sleep_time=5, **kwargs):
             prompts = kwargs['prompt']
         return kwargs['endpoint'](prompts, **kwargs)
     else:
-        while True:
+    """
+    while True:
+    
             try:
-                return openai.Completion.create(*args, **kwargs)
-            except:
+                # for gpt4 I need to update the call
+                openai_response = client.chat.completions.create(
+                    model=model, messages=messages, **kwargs
+                )
+                return openai_response
+                #return client.completions.create(*args, **kwargs)
+                #return openai.Completion.create(*args, **kwargs)
+            except Exception as e:
+                print('OpenAI error:', e)
+                print('MESSAGES: ', messages)
                 sleep(sleep_time)
